@@ -1,3 +1,5 @@
+require 'zlib'
+
 module WithAdvisoryLock
   class Base
     attr_reader :connection, :lock_name, :timeout_seconds
@@ -5,6 +7,14 @@ module WithAdvisoryLock
     def initialize(connection, lock_name, timeout_seconds)
       @connection = connection
       @lock_name = lock_name
+      lock_name_prefix = ENV['WITH_ADVISORY_LOCK_PREFIX']
+      if lock_name_prefix
+        @lock_name = if lock_name.is_a? Numeric
+          "#{lock_name_prefix.to_i}#{lock_name}".to_i
+        else
+          "#{lock_name_prefix}#{lock_name}"
+        end
+      end
       @timeout_seconds = timeout_seconds
     end
 
@@ -12,12 +22,20 @@ module WithAdvisoryLock
       connection.quote(lock_name)
     end
 
-    def lock_stack
+    def self.lock_stack
       Thread.current[:with_advisory_lock_stack] ||= []
+    end
+
+    def lock_stack
+      self.class.lock_stack
     end
 
     def already_locked?
       lock_stack.include? @lock_name
+    end
+
+    def advisory_lock_exists?(name)
+      raise NoMethodError, "method must be implemented in implementation subclasses"
     end
 
     def with_advisory_lock_if_needed
@@ -25,6 +43,16 @@ module WithAdvisoryLock
         yield
       else
         yield_with_lock { yield }
+      end
+    end
+
+    def stable_hashcode(input)
+      if input.is_a? Numeric
+        input.to_i
+      else
+        # Ruby MRI's String#hash is randomly seeded as of Ruby 1.9 so
+        # make sure we use a deterministic hash.
+        Zlib.crc32(input.to_s)
       end
     end
 

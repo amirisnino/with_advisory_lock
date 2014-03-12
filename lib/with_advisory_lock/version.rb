@@ -1,3 +1,3 @@
 module WithAdvisoryLock
-  VERSION = "0.0.7"
+  VERSION = Gem::Version.new('1.0.0')
 end
